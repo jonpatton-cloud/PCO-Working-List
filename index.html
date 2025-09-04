@@ -33,7 +33,7 @@
   <div id="masterListTable">Loading Master List…</div>
 
   <h2>Selected</h2>
-  <div id="selectedTable">No items selected</div>
+  <div id="selectedTable">Loading Selected…</div>
 
   <!-- jQuery + DataTables JS -->
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
@@ -43,6 +43,7 @@
     const sheetId = "1GdLcZO7AT91gb5s2zcUVCAcI20Fppk22q-DK7Roeb8k";
     let selectedRows = [];
     let masterHeaders = [];
+    let masterData = [];
 
     async function fetchSheet(tabName, containerId, addCheckboxes=false) {
       try {
@@ -52,50 +53,52 @@
         const json = JSON.parse(text.match(/.*\((.*)\)/s)[1]);
 
         const cols = json.table.cols.map(c => c.label || "");
-        const rows = json.table.rows;
+        const rows = json.table.rows.map(r => r.c.map(c => c ? c.v : ""));
 
-        // Store headers for Master List to use in Selected table
-        if(tabName === "Master List") masterHeaders = cols;
+        // Save master headers and data
+        if(tabName === "Master List") {
+          masterHeaders = cols;
+          masterData = rows;
+        }
 
+        // Render table
         let html = "<table id='" + containerId + "Table'><thead><tr>";
         if(addCheckboxes) html += "<th class='checkbox-col'>Select</th>";
-        cols.forEach(label => { html += `<th>${label}</th>`; });
+        cols.forEach(label => html += `<th>${label}</th>`);
         html += "</tr></thead><tbody>";
 
-        rows.forEach((r, index) => {
+        rows.forEach((row, index) => {
           html += "<tr>";
           if(addCheckboxes) {
-            html += `<td class='checkbox-col'><input type='checkbox' data-row='${index}'></td>`;
+            const checked = selectedRows.some(r => r.join() === row.join()) ? "checked" : "";
+            html += `<td class='checkbox-col'><input type='checkbox' data-row='${index}' ${checked}></td>`;
           }
-          r.c.forEach(cell => html += `<td>${cell ? cell.v : ""}</td>`);
+          row.forEach(cell => html += `<td>${cell}</td>`);
           html += "</tr>";
         });
         html += "</tbody></table>";
 
         document.getElementById(containerId).innerHTML = html;
 
-        $(`#${containerId}Table`).DataTable({
-          paging: true,
-          searching: true,
-          order: []
-        });
+        $(`#${containerId}Table`).DataTable({ paging: true, searching: true, order: [] });
 
-        // Set E8 input if Order Input table
-        if(containerId === "orderInputTable" && rows.length >= 8 && rows[7].c.length >= 5) {
-          document.getElementById("cellE8").value = rows[7].c[4] ? rows[7].c[4].v : "";
+        // Set E8 if Order Input table
+        if(containerId === "orderInputTable" && rows.length >= 8 && rows[7].length >= 5) {
+          document.getElementById("cellE8").value = rows[7][4] || "";
         }
 
-        // Attach checkbox listeners for Master List
+        // Checkbox listener for Master List
         if(addCheckboxes) {
           $(`#${containerId}Table tbody input[type='checkbox']`).on('change', function() {
             const rowIndex = parseInt($(this).attr('data-row'));
-            const rowData = rows[rowIndex].c.map(c => c ? c.v : "");
+            const rowData = masterData[rowIndex];
             if(this.checked) {
               selectedRows.push(rowData);
             } else {
               selectedRows = selectedRows.filter(r => r.join() !== rowData.join());
             }
             renderSelectedTable();
+            syncSelectedToSheet();
           });
         }
 
@@ -123,17 +126,40 @@
       $('#selectedTableData').DataTable({ paging: true, searching: true, order: [] });
     }
 
-    // Load tabs
-    fetchSheet("Order Input", "orderInputTable");
-    fetchSheet("Master List", "masterListTable", true);
+    // Sync Selected table to Google Sheet
+    function syncSelectedToSheet() {
+      const webAppUrl = "YOUR_WEB_APP_URL"; // replace with your Apps Script Web App URL
+      fetch(webAppUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(selectedRows)
+      })
+      .then(res => res.text())
+      .then(msg => console.log("Selected synced:", msg))
+      .catch(err => console.error("Error syncing Selected:", err));
+    }
 
-    // Update E8 via Apps Script
+    // Load tabs on page load
+    async function loadAll() {
+      // Fetch Selected first to restore previous selections
+      try {
+        const res = await fetch(`https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Selected`);
+        const text = await res.text();
+        const json = JSON.parse(text.match(/.*\((.*)\)/s)[1]);
+        selectedRows = json.table.rows.map(r => r.c.map(c => c ? c.v : ""));
+      } catch(e) { selectedRows = []; }
+
+      fetchSheet("Order Input", "orderInputTable");
+      fetchSheet("Master List", "masterListTable", true);
+      renderSelectedTable();
+    }
+
+    // Update E8
     function updateE8() {
       const newValue = document.getElementById("cellE8").value;
       if (!newValue) return;
 
-      const webAppUrl = "YOUR_WEB_APP_URL?value=" + encodeURIComponent(newValue);
-
+      const webAppUrl = "YOUR_WEB_APP_URL?value=" + encodeURIComponent(newValue); // Apps Script URL
       fetch(webAppUrl, { method: "POST" })
         .then(res => res.text())
         .then(msg => {
@@ -145,6 +171,8 @@
           console.error(err);
         });
     }
+
+    window.onload = loadAll;
   </script>
 </body>
 </html>
