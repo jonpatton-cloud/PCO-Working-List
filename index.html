@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>PCO Working List</title>
+  <!-- DataTables CSS -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+  <style>
+    body { font-family: sans-serif; margin: 40px; }
+    table { width: 100%; margin-bottom: 40px; }
+    .error { color: red; }
+    .input-section { margin-bottom: 20px; }
+    label { font-weight: bold; margin-right: 10px; }
+    input[type=number] { width: 100px; padding: 4px; }
+    button { padding: 4px 8px; margin-left: 10px; }
+  </style>
+</head>
+<body>
+  <h1>PCO Working List</h1>
+
+  <div class="input-section">
+    <label>Change Order Input E8:</label>
+    <input id="cellE8" type="number" />
+    <button onclick="updateE8()">Update</button>
+    <span id="updateStatus"></span>
+  </div>
+
+  <h2>Order Input</h2>
+  <div id="orderInputTable">Loading Order Input…</div>
+
+  <h2>Selected</h2>
+  <div id="selectedTable">Loading Selected…</div>
+
+  <!-- jQuery + DataTables JS -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+
+  <script>
+    const sheetId = "1GdLcZO7AT91gb5s2zcUVCAcI20Fppk22q-DK7Roeb8k";
+
+    async function fetchSheet(tabName, containerId) {
+      try {
+        const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tabName)}`;
+        const res = await fetch(url);
+        const text = await res.text();
+        const json = JSON.parse(text.match(/.*\((.*)\)/s)[1]);
+
+        const cols = json.table.cols.map(c => c.label || "");
+        const rows = json.table.rows;
+
+        let html = "<table id='" + containerId + "Table'><thead><tr>";
+        cols.forEach(label => { html += `<th>${label}</th>`; });
+        html += "</tr></thead><tbody>";
+        rows.forEach(r => {
+          html += "<tr>";
+          r.c.forEach(cell => html += `<td>${cell ? cell.v : ""}</td>`);
+          html += "</tr>";
+        });
+        html += "</tbody></table>";
+
+        document.getElementById(containerId).innerHTML = html;
+
+        // Initialize DataTables
+        $(`#${containerId}Table`).DataTable({
+          paging: true,
+          searching: true,
+          order: []
+        });
+
+        // If this is the Order Input table, set the input field to E8 value
+        if(containerId === "orderInputTable" && rows.length >= 8 && rows[7].c.length >= 5) {
+          document.getElementById("cellE8").value = rows[7].c[4] ? rows[7].c[4].v : "";
+        }
+
+      } catch (err) {
+        document.getElementById(containerId).innerHTML = `<div class="error">Error loading ${tabName}: ${err}</div>`;
+        console.error(err);
+      }
+    }
+
+    // Load both tabs
+    fetchSheet("Order Input", "orderInputTable");
+    fetchSheet("Selected", "selectedTable");
+
+    // Function to update E8 via Google Apps Script
+    function updateE8() {
+      const newValue = document.getElementById("cellE8").value;
+      if (!newValue) return;
+
+      // Replace YOUR_WEB_APP_URL with your deployed Apps Script Web App URL
+      const webAppUrl = "YOUR_WEB_APP_URL?value=" + encodeURIComponent(newValue);
+
+      fetch(webAppUrl, { method: "POST" })
+        .then(res => res.text())
+        .then(msg => {
+          document.getElementById("updateStatus").innerText = "Updated successfully!";
+          // Reload the Order Input table after updating
+          fetchSheet("Order Input", "orderInputTable");
+        })
+        .catch(err => {
+          document.getElementById("updateStatus").innerText = "Update failed.";
+          console.error(err);
+        });
+    }
+  </script>
+</body>
+</html>
