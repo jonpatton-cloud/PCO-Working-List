@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Google Sheets Live Viewer</title>
+  <!-- DataTables CSS -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+  <style>
+    body { font-family: sans-serif; margin: 40px; }
+    table { width: 100%; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <h1>My Google Sheets Data</h1>
+  <div id="data">Loading data…</div>
+
+  <!-- jQuery + DataTables JS -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+
+  <script>
+    async function loadData() {
+      const sheetId = "1GdLcZO7AT91gb5s2zcUVCAcI20Fppk22q-DK7Roeb8k";
+
+      try {
+        // First, get the sheet metadata to detect the first tab
+        const metaUrl = `https://spreadsheets.google.com/feeds/worksheets/${sheetId}/public/basic?alt=json`;
+        const metaRes = await fetch(metaUrl);
+        const metaJson = await metaRes.json();
+        const sheetName = metaJson.feed.entry[0].title.$t; // first tab name
+
+        // Now fetch the sheet data
+        const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}`;
+        const res = await fetch(url);
+        const text = await res.text();
+        const json = JSON.parse(text.match(/.*\((.*)\)/s)[1]);
+
+        const cols = json.table.cols.map(c => c.label || "");
+        const rows = json.table.rows;
+
+        // Build HTML table
+        let html = "<table id='sheetTable'><thead><tr>";
+        cols.forEach(label => { html += `<th>${label}</th>`; });
+        html += "</tr></thead><tbody>";
+        rows.forEach(r => {
+          html += "<tr>";
+          r.c.forEach(cell => html += `<td>${cell ? cell.v : ""}</td>`);
+          html += "</tr>";
+        });
+        html += "</tbody></table>";
+
+        document.getElementById("data").innerHTML = html;
+
+        // Initialize DataTables
+        $('#sheetTable').DataTable({
+          paging: true,
+          searching: true,
+          order: []
+        });
+
+      } catch (err) {
+        document.getElementById("data").innerHTML = `<div class="error">Error: ${err}</div>`;
+        console.error(err);
+      }
+    }
+
+    window.onload = loadData;
+  </script>
+</body>
+</html>
+
